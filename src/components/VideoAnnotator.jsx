@@ -13,9 +13,16 @@ import {
   Paper,
 } from "@mui/material";
 import { useRef, useState } from "react";
-import axios from "axios";
 import { toast } from "react-toastify";
+import { createClient } from "@supabase/supabase-js";
 import "react-toastify/dist/ReactToastify.css";
+
+// Load from .env
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
+const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_KEY;
+const BUCKET_NAME = process.env.REACT_APP_SUPABASE_BUCKET;
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export default function VideoAnnotator() {
   const videoRef = useRef();
@@ -56,30 +63,36 @@ export default function VideoAnnotator() {
     setCurrentFrame(value);
   };
 
-  const handleExport = async () => {
-    const blob = new Blob([JSON.stringify(annotations, null, 2)], {
-      type: "application/json",
-    });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "annotations.json";
-    a.click();
+const handleExport = async () => {
+  const json = JSON.stringify(annotations, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
 
-    try {
-      await axios.post(
-        "http://localhost:8000/api/v1/upload-annotations",
-        annotations,
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      toast.success("Gửi thành công lên server!");
-    } catch (err) {
-      toast.error("Lỗi: " + err.message);
-    }
-  };
+  const supabaseFilename = `annotations-${Date.now()}.json`;
+
+  // Save locally
+const localUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = localUrl;
+  a.download = "output.json"; 
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(localUrl);
+
+  // Upload to Supabase
+  const { error } = await supabase.storage
+    .from(BUCKET_NAME)
+    .upload(supabaseFilename, blob, {
+      contentType: "application/json",
+      upsert: false,
+    });
+
+  if (error) {
+    toast.error("Lỗi Supabase: " + error.message);
+  } else {
+    toast.success("Đã lưu lên Supabase thành công!");
+  }
+};
 
   return (
     <Stack spacing={3}>
@@ -121,7 +134,7 @@ export default function VideoAnnotator() {
               Lưu nhãn
             </Button>
             <Button variant="contained" onClick={handleExport}>
-              Xuất + Gửi lên Server
+              Xuất + Lưu lên Supabase
             </Button>
           </Stack>
 
